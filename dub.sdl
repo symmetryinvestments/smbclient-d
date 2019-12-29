@@ -1,0 +1,15 @@
+name "smbclient-d"
+description "SAMBA client library"
+libs "smbclient"
+
+license "MIT"
+
+configuration "main" {
+	targetType "executable"
+}
+
+configuration "default" {
+	targetType "library"
+}
+
+
