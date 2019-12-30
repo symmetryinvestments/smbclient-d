@@ -11,6 +11,53 @@ void init(smbc_get_auth_data_fn fn, int debugLevel)
 	enforce(result == 0, "error initializing samba client library - out of memory or cannot find smb.conf?");
 }
 
+static NotifyCallbackFunction notify_cb = (actions, privateData)
+{
+	import std.stdio;
+	writeln(actions);
+	return 0;
+};
+
+enum AllChangeNotificationTypes = [
+	ChangeNotificationType.fileName,
+	ChangeNotificationType.dirName,
+	ChangeNotificationType.attributes,
+	ChangeNotificationType.size,
+	ChangeNotificationType.lastWrite,
+	ChangeNotificationType.lastAccess,
+	ChangeNotificationType.creation,
+	ChangeNotificationType.extendedAttributes,
+	ChangeNotificationType.security,
+	ChangeNotificationType.streamName,
+	ChangeNotificationType.streamSize,
+	ChangeNotificationType.streamWrite,
+];
+
+void main(string[] args)
+{
+	int count;
+	init(&get_auth_data_fn,1); // enable debug
+	auto context = ClientContext.createNew();
+	auto dir = SambaDirectory.open(args[1]);
+	context.requestNotifications(dir, true, AllChangeNotificationTypes, 1000.msecs,notify_cb, (cast(ubyte*)&count)[0 .. count.sizeof]);
+	dir.close();
+}
+
+
+extern(C) void get_auth_data_fn(const(char)* pServer, const(char)* pShare, char* pWorkgroup, int maxLenWorkgroup,
+							char* pUsername, int maxLenUsername, char* pPassword, int maxLenPassword)
+{
+	import std.process : environment;
+	import std.string : toStringz;
+	*pWorkgroup = '\0';
+	auto username = environment.get("CARBON_USER") ~ '\0';
+	enforce(username.length <= maxLenUsername, "username exceeds allocated space");
+	pUsername[0 .. username.length] = username[0 .. $];
+	auto password = environment.get("CARBON_PW") ~ '\0';
+	enforce(password.length <= maxLenPassword, "passwordexceeds allocated space");
+	pPassword[0 .. password.length] = password[0 .. $];
+}
+
 struct ClientContext
 {
 	SMBCCTX* handle;
@@ -266,13 +313,15 @@ struct ClientContext
 		smbc_set_credentials_with_fallback(handle,workgroup.toStringz,user.toStringz,password.toStringz);
 	}
 
-	void requestNotifications(SMBCFILE* directory, bool recursive, ChangeNotificationType[] notificationTypes, Duration heartbeatInterval,NotifyCallbackFunction callbackFunction,ubyte[] privateData)
+	//void requestNotifications(SMBCFILE* directory, bool recursive, ChangeNotificationType[] notificationTypes, Duration heartbeatInterval,NotifyCallbackFunction callbackFunction,ubyte[] privateData)
+	void requestNotifications(SambaDirectory directory, bool recursive, ChangeNotificationType[] notificationTypes, Duration heartbeatInterval,NotifyCallbackFunction callbackFunction,ubyte[] privateData)
 	{
 		uint notification_types = notificationTypes.orEnums;
 		auto timeout = heartbeatInterval.total!"msecs".to!uint;
-		auto notify_fn = smbc_getFunctionNotify(handle);
+		//auto notify_fn = smbc_getFunctionNotify(handle);
 		auto notifyCallbackPrivateData = new NotifyCallbackPrivateData(callbackFunction, privateData);
-		auto result = notify_fn(handle,directory, recursive ? 1 : 0, notification_types, timeout, &notifyCallbackFunctionC,cast(void*)notifyCallbackPrivateData);
+		//auto result = notify_fn(handle,directory, recursive ? 1 : 0, notification_types, timeout, &notifyCallbackFunctionC,cast(void*)notifyCallbackPrivateData);
+		auto result = smbc_notify(directory.handle, recursive ? 1 : 0, notification_types, timeout, &notifyCallbackFunctionC,cast(void*)notifyCallbackPrivateData);
 		enforce(result >= 0);
 	}
 }
